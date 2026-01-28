@@ -17,6 +17,22 @@ logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("debate_judge")
 
 
+def extract_text(response) -> str:
+    # Case 1: Messenger returns plain text
+    if isinstance(response, str):
+        return response
+
+    # Case 2: Artifact-based response
+    if hasattr(response, "root"):
+        root = response.root
+        if hasattr(root, "data") and isinstance(root.data, dict):
+            return root.data.get("argument", "")
+        if hasattr(root, "text"):
+            return root.text
+
+    return ""
+
+
 class EvalRequest(BaseModel):
     """Request format sent by the AgentBeats platform to green agents."""
     participants: dict[str, HttpUrl] # role -> agent URL
@@ -116,15 +132,11 @@ class Agent:
         debate: dict[str, list[str]] = {"pro_debater": [], "con_debater": []}
 
         async def turn(role: str, prompt: str) -> str:
-            artifact = await self.messenger.talk_to_agent(
+            response = await self.messenger.talk_to_agent(
                 prompt, str(participants[role]), new_conversation=False
             )
 
-            # Extract the argument text
-            if hasattr(artifact.root, "data"):
-                response_text = artifact.root.data.get("argument", "")
-            else:
-                response_text = getattr(artifact.root, "text", "")
+            response_text = extract_text(response)
 
             debate[role].append(response_text)
             await updater.update_status(
